@@ -90,6 +90,12 @@ button:disabled{opacity:.45;cursor:default}
 .sum b{display:block;font-family:var(--display);font-size:24px;font-variant-numeric:tabular-nums}
 .sum span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 #dlgWo{width:min(560px,calc(100vw - 24px));max-height:calc(100vh - 40px)}
+.woitem.ramp{border-color:var(--accent)}
+.ftpres{font-family:var(--display);font-weight:800;font-size:56px;line-height:1;color:var(--accent);font-variant-numeric:tabular-nums}
+.ftpres small{font-size:22px;color:var(--muted);font-weight:500}
+.chk{display:flex;gap:8px;align-items:flex-start;color:var(--muted);font-size:14px;line-height:1.35}
+.chk input{margin-top:3px}
+.ftphist{font-size:13px;color:var(--muted);margin:6px 0 0;padding-left:18px}
 .wolist{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
 .woitem{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:center}
 .woitem .t{font-weight:600}
@@ -159,6 +165,7 @@ dialog p{color:var(--muted);font-size:13px;line-height:1.4}
       <span class="tag" id="tHr">Puls –</span>
       <span class="tag" id="tAvg">Ø 0 W</span>
       <span class="tag" id="tKcal">0 kcal</span>
+      <span class="tag" id="tFtp">FTP 200 W</span>
     </div>
     <div class="wobar" id="woBar" hidden>
       <div class="wn"><span id="woName">Training</span><span id="woStep">1/1</span></div>
@@ -202,7 +209,9 @@ dialog p{color:var(--muted);font-size:13px;line-height:1.4}
   <h2>Einstellungen</h2>
   <label for="inFtp">FTP (deine Dauerleistung)<input id="inFtp" type="number" min="50" max="600" step="5"></label>
   <label for="inKg">Körpergewicht (kg)<input id="inKg" type="number" min="30" max="200" step="1"></label>
-  <p>Die FTP bestimmt die Farben der Leistungszonen und die Watt-Schnelltasten. Weißt du sie nicht, lass 200 W stehen.</p>
+  <p>Die FTP bestimmt die Farben der Leistungszonen und die Watt-Schnelltasten. Weißt du sie nicht, mach den Rampentest.</p>
+  <div id="ftpHistBox"></div>
+  <div class="row2" style="margin-bottom:8px"><button id="btnRampSet">FTP-Rampentest starten</button></div>
   <div class="row2"><button id="dlgClose" class="primary">Fertig</button></div>
 </dialog>
 
@@ -273,6 +282,7 @@ function renderHud(){
   $('tHr').textContent='Puls '+(S.hr?Math.round(S.hr):'–');
   $('tAvg').textContent='Ø '+(S.nP?Math.round(S.sumP/S.nP):0)+' W';
   $('tKcal').textContent=Math.round(S.kcal)+' kcal';
+  $('tFtp').textContent='FTP '+S.ftp+' W';
 }
 
 /* ---------- Bluetooth (FTMS + Cycling Power fallback) ---------- */
@@ -383,7 +393,7 @@ function resetRide(){Object.assign(S,{dist:0,time:0,kcal:0,sumP:0,nP:0,sumHr:0,n
 $('btnReset').onclick=resetRide;
 $('btnConnect').onclick=connect;$('btnConnect2').onclick=connect;$('btnDemo').onclick=startDemo;
 const dlg=$('dlg');
-$('btnSettings').onclick=()=>{$('inFtp').value=S.ftp;$('inKg').value=S.kg;dlg.showModal()};
+$('btnSettings').onclick=()=>{$('inFtp').value=S.ftp;$('inKg').value=S.kg;renderFtpHist();dlg.showModal()};
 $('dlgClose').onclick=()=>{const f=+$('inFtp').value,k=+$('inKg').value;if(f>=50&&f<=600)S.ftp=f;if(k>=30&&k<=200)S.kg=k;store.set('ftp',S.ftp);store.set('kg',S.kg);renderPresets();dlg.close()};
 document.addEventListener('keydown',e=>{if(dlg.open)return;if(e.key==='ArrowUp'){setTarget(S.target+5);e.preventDefault()}if(e.key==='ArrowDown'){setTarget(S.target-5);e.preventDefault()}if(e.key===' '){$('btnStart').click();e.preventDefault()}});
 
@@ -571,6 +581,9 @@ function drawProfile(c,w,h,steps,t,hist){
 
 function renderWoList(){
   const box=$('woList');box.innerHTML='';
+  const rp=document.createElement('div');rp.className='woitem ramp';
+  rp.innerHTML='<div class="t">FTP-Rampentest</div><div class="acts"><button class="primary">Starten</button></div><div class="s">5 min locker, dann jede Minute +20 W, bis du nicht mehr kannst. Am Ende rechnet die App deine FTP aus.</div>';
+  rp.querySelector('button').onclick=startRamp;box.appendChild(rp);
   workouts.forEach((wo,i)=>{
     const el=document.createElement('div');el.className='woitem';
     const avg=Math.round(wo.steps.reduce((a,s)=>a+s.w*s.d,0)/(woTotal(wo.steps)||1));
@@ -583,7 +596,7 @@ function renderWoList(){
     box.appendChild(el);
     requestAnimationFrame(()=>{const cv2=el.querySelector('canvas'),r=cv2.getBoundingClientRect();cv2.width=r.width*dpr;cv2.height=r.height*dpr;const c=cv2.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);drawProfile(c,r.width,r.height,wo.steps)});
   });
-  if(!workouts.length)box.innerHTML='<p>Noch keine Trainings. Tippe auf „Neues Training“.</p>';
+  if(!workouts.length)box.insertAdjacentHTML('beforeend','<p>Noch keine eigenen Trainings. Tippe auf „Neues Training“.</p>');
 }
 const dlgWo=$('dlgWo');
 function showWoList(){$('woEditView').hidden=true;$('woListView').hidden=false;renderWoList()}
@@ -639,6 +652,7 @@ function startWorkout(wo){
   dlgWo.close();resetRide();
   S.wo={plan:JSON.parse(JSON.stringify(wo)),t:0,idx:-1,hist:[]};
   $('woName').textContent=wo.name;$('woBar').hidden=false;
+  $('woStop').textContent=wo.ramp?'Ich kann nicht mehr':'Training beenden';$('woStop').className=wo.ramp?'primary':'ghost';
   setTarget(wo.steps[0].w);
   try{actx=actx||new (window.AudioContext||window.webkitAudioContext)()}catch(e){}
   if(S.mode==='none')showNotice('Training bereit','Verbinde jetzt die Rolle. Das Training startet automatisch, sobald die Verbindung steht.');
@@ -647,13 +661,23 @@ function startWorkout(wo){
 function tickWorkout(dt){
   const wo=S.wo,st=wo.plan.steps;wo.t+=dt;
   let tc=0,i=0;while(i<st.length&&tc+st[i].d<=wo.t){tc+=st[i].d;i++}
-  if(i>=st.length){finishWorkout();return}
+  if(i>=st.length){wo.plan.ramp?finishRamp():finishWorkout();return}
   if(i!==wo.idx){if(wo.idx>=0)beep(st[i].w>st[wo.idx].w?990:660,0.25);wo.idx=i;setTarget(st[i].w)}
   const left=tc+st[i].d-wo.t;
   if(left<3.05&&left>3.05-dt||left<2.05&&left>2.05-dt||left<1.05&&left>1.05-dt)beep(880,0.08);
-  $('woStep').textContent='Block '+(i+1)+'/'+st.length;
-  $('woNow').innerHTML=S.target+'<small>W · noch '+fmtM(left)+'</small>';
-  $('woNext').textContent=st[i+1]?'Danach '+st[i+1].w+' W für '+fmtM(st[i+1].d)+' min':'Letzter Block';
+  if(wo.plan.ramp){
+    $('woStep').textContent=i===0?'Aufwärmen':'Stufe '+i;
+    $('woNow').innerHTML=S.target+'<small>W · noch '+fmtM(left)+'</small>';
+    $('woNext').textContent=i===0?'Danach geht es los mit '+st[1].w+' W':'Danach '+st[i+1].w+' W · Halte die Trittfrequenz über 70';
+    if(i>0){ // automatisch beenden, wenn die Trittfrequenz einbricht
+      if(S.mode!=='demo'&&(S.cad<45||S.power<S.target*0.6))wo.fail=(wo.fail||0)+dt;else wo.fail=0;
+      if(wo.fail>6){finishRamp();return}
+    }
+  }else{
+    $('woStep').textContent='Block '+(i+1)+'/'+st.length;
+    $('woNow').innerHTML=S.target+'<small>W · noch '+fmtM(left)+'</small>';
+    $('woNext').textContent=st[i+1]?'Danach '+st[i+1].w+' W für '+fmtM(st[i+1].d)+' min':'Letzter Block';
+  }
   $('woProg').style.width=(wo.t/woTotal(st)*100).toFixed(1)+'%';
 }
 function endWorkoutUi(){S.wo=null;$('woBar').hidden=true}
@@ -665,7 +689,42 @@ function finishWorkout(){
   n.querySelector('p').textContent=name+' ist vorbei. Die Rolle steht jetzt auf lockeren '+S.target+' W zum Ausrollen.';
   $('nClose').onclick=hideNotice;
 }
-$('woStop').onclick=()=>{endWorkoutUi()};
+$('woStop').onclick=()=>{S.wo&&S.wo.plan.ramp?finishRamp():endWorkoutUi()};
+
+/* ---------- FTP ramp test ---------- */
+const WARM=300;
+function startRamp(){
+  const steps=[{d:WARM,w:100}];for(let k=0;k<30;k++)steps.push({d:60,w:120+k*20});
+  dlg.open&&dlg.close();
+  startWorkout({name:'FTP-Rampentest',ramp:true,steps});
+}
+$('btnRampSet').onclick=startRamp;
+function finishRamp(){
+  const h=S.wo.hist.slice(WARM);endWorkoutUi();beep(1180,0.5);
+  setTarget(100);
+  const n=$('notice');n.hidden=false;
+  let best=0;
+  if(h.length>=60){let sum=0;for(let i=0;i<h.length;i++){sum+=h[i];if(i>=60)sum-=h[i-60];if(i>=59)best=Math.max(best,sum/60)}}
+  if(best<=0){
+    n.innerHTML='<h2>Test zu kurz</h2><p>Für ein Ergebnis musst du nach dem Aufwärmen mindestens eine Minute in der Rampe fahren. Versuch es gern noch einmal, wenn du erholt bist.</p><div class="btns"><button class="primary" id="nClose">Schließen</button></div>';
+    $('nClose').onclick=hideNotice;return;
+  }
+  const ftp=Math.round(best*0.75);
+  n.innerHTML='<h2>Deine FTP</h2><div class="ftpres">'+ftp+'<small> W</small></div><p>Beste Minute: '+Math.round(best)+' W. Davon 75 % ergibt deine FTP. Bisher eingestellt: '+S.ftp+' W.</p><label class="chk"><input type="checkbox" id="nRescale" checked> Beispiel-Trainings an die neue FTP anpassen (deine eigenen Trainings bleiben, wie sie sind)</label><div class="btns"><button class="primary" id="nTake">Als meine FTP speichern</button><button class="ghost" id="nClose">Nicht speichern</button></div>';
+  $('nClose').onclick=hideNotice;
+  $('nTake').onclick=()=>{
+    const hist=store.get('ftpHist',[]);hist.unshift({date:new Date().toISOString().slice(0,10),ftp,best:Math.round(best)});store.set('ftpHist',hist.slice(0,10));
+    S.ftp=ftp;store.set('ftp',ftp);renderPresets();
+    if($('nRescale').checked){const fresh=sampleWorkouts();workouts=workouts.map(w=>{const f=w.id&&fresh.find(x=>x.id===w.id);return f||w});saveWorkouts()}
+    n.innerHTML='<h2>Gespeichert</h2><p>Deine FTP ist jetzt '+ftp+' W. Zonenfarben und Schnelltasten sind angepasst. Rolle locker aus!</p><div class="btns"><button class="primary" id="nClose">Schließen</button></div>';
+    $('nClose').onclick=hideNotice;
+  };
+}
+function renderFtpHist(){
+  const hist=store.get('ftpHist',[]),box=$('ftpHistBox');
+  if(!hist.length){box.innerHTML='';return}
+  box.innerHTML='<p style="margin:0">Deine letzten Tests:</p><ul class="ftphist">'+hist.map(x=>'<li>'+x.date.split('-').reverse().join('.')+': '+x.ftp+' W</li>').join('')+'</ul>';
+}
 
 /* ---------- Main loop ---------- */
 let last=performance.now(),acc=0,histAcc=0;
