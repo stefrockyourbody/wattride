@@ -531,15 +531,27 @@ $('btnHr').onclick=connectHr;
 const fmtM=s=>{s=Math.round(s);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
 const woTotal=st=>st.reduce((a,b)=>a+b.d,0);
 function sampleWorkouts(){
-  const f=S.ftp,W=x=>Math.round(f*x/5)*5,b=(m,x)=>({d:m*60,w:W(x)}),rep=(n,arr)=>Array.from({length:n},()=>arr).flat();
+  const f=S.ftp,W=x=>Math.round(f*x/5)*5,b=(m,x)=>({d:Math.round(m*60),w:W(x)}),rep=(n,arr)=>Array.from({length:n},()=>arr).flat();
+  const set3015=rep(13,[b(0.5,1.2),b(0.25,0.5)]);
   return [
-    {name:'Grundlage 45 min',steps:[b(5,.5),b(35,.65),b(5,.5)]},
-    {name:'Sweet Spot 3 × 10 min',steps:[b(10,.55),...rep(3,[b(10,.9),b(5,.55)]),b(5,.5)]},
-    {name:'VO2max 5 × 3 min',steps:[b(10,.55),...rep(5,[b(3,1.15),b(3,.5)]),b(8,.5)]},
-    {name:'Pyramide',steps:[b(8,.55),b(2,.7),b(2,.8),b(2,.9),b(2,1),b(2,.9),b(2,.8),b(2,.7),b(6,.5)]}
+    {id:'base45',name:'Grundlage 45 min',steps:[b(5,.5),b(35,.65),b(5,.5)]},
+    {id:'ss3x10',name:'Sweet Spot 3 × 10 min',steps:[b(10,.55),...rep(3,[b(10,.9),b(5,.55)]),b(5,.5)]},
+    {id:'vo5x3',name:'VO2max 5 × 3 min',steps:[b(10,.55),...rep(5,[b(3,1.15),b(3,.5)]),b(8,.5)]},
+    {id:'pyr',name:'Pyramide',steps:[b(8,.55),b(2,.7),b(2,.8),b(2,.9),b(2,1),b(2,.9),b(2,.8),b(2,.7),b(6,.5)]},
+    {id:'base30',name:'Grundlage 30 min',steps:[b(5,.5),b(20,.68),b(5,.5)]},
+    {id:'thr30',name:'Schwelle 30 min · 3 × 5 min',steps:[b(5,.55),b(1,.75),...rep(3,[b(5,1),b(2.5,.55)]),b(1.5,.5)]},
+    {id:'vo3015',name:'VO2max 30/15 · 3 × 13 (Rønnestad)',steps:[b(10,.55),b(1,.9),b(2,.55),...set3015,b(3,.5),...set3015,b(3,.5),...set3015,b(8,.5)]}
   ];
 }
-let workouts=store.get('workouts',null)||sampleWorkouts();
+let workouts=store.get('workouts',null);
+{ // neue Beispiel-Trainings auch bei bestehenden Nutzern ergänzen
+  const samples=sampleWorkouts();
+  let seen=store.get('samplesSeen',null);
+  if(!workouts){workouts=[];seen=[]}
+  else if(!seen)seen=['base45','ss3x10','vo5x3','pyr'];
+  for(const w of samples)if(!seen.includes(w.id)){workouts.push(w);seen.push(w.id)}
+  store.set('samplesSeen',seen);store.set('workouts',workouts);
+}
 const saveWorkouts=()=>store.set('workouts',workouts);
 
 function drawProfile(c,w,h,steps,t,hist){
