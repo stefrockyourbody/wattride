@@ -40,13 +40,18 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#1a0b02
 button.ghost{background:transparent}
 button:disabled{opacity:.45;cursor:default}
 
-.hud{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.hud{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px}
 .m{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 10px;min-width:0}
 .m .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);white-space:nowrap}
 .m .v{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.05;font-variant-numeric:tabular-nums;white-space:nowrap}
 .m .v small{font-size:14px;color:var(--muted);font-weight:500;margin-left:3px}
 .m.power{grid-column:span 2;border-color:var(--accent)}
 .m.power .v{font-size:44px;color:var(--accent)}
+.m.hr{grid-column:span 2;border-color:var(--bad)}
+.m.hr .v{font-size:44px;color:var(--bad)}
+.m.hr .heart{display:inline-block;margin-right:6px;font-size:.7em;vertical-align:.08em}
+.m.hr.beat .heart{animation:beat .9s ease-in-out infinite}
+@keyframes beat{0%,100%{transform:scale(1)}15%{transform:scale(1.25)}30%{transform:scale(1)}}
 .m.power .row{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .zone{font-family:var(--display);font-size:15px;padding:1px 8px;border-radius:6px;color:#0d1417;font-weight:700}
 
@@ -123,18 +128,18 @@ dialog p{color:var(--muted);font-size:13px;line-height:1.4}
 
 @media (max-width:720px){
   .hud{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .m.power{grid-column:span 4}
+  .m.power,.m.hr{grid-column:span 2}
   .m{padding:5px 7px}
   .m .k{font-size:9.5px;letter-spacing:.04em}
   .m .v{font-size:21px}
   .m .v small{font-size:11px}
-  .m.power .v{font-size:38px}
+  .m.power .v,.m.hr .v{font-size:38px}
   .erg .tgt .v{font-size:38px}
   .step{min-width:46px;padding:10px 4px;font-size:19px}
   body{overflow:auto}
   .app{height:auto;min-height:100%;grid-template-rows:auto auto minmax(220px,38vh) auto auto}
 }
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
 <div class="app">
@@ -153,6 +158,7 @@ dialog p{color:var(--muted);font-size:13px;line-height:1.4}
       <div class="k">Leistung</div>
       <div class="row"><div class="v" id="vPower">0<small>W</small></div><span class="zone" id="vZone">Z1</span></div>
     </div>
+    <div class="m hr" id="mHr"><div class="k">Puls</div><div class="v"><span class="heart" aria-hidden="true">♥</span><span id="vHr">–</span><small>bpm</small></div></div>
     <div class="m"><div class="k">Trittfrequenz</div><div class="v" id="vCad">0<small>rpm</small></div></div>
     <div class="m"><div class="k">Tempo</div><div class="v" id="vSpeed">0.0<small>km/h</small></div></div>
     <div class="m"><div class="k">Strecke</div><div class="v" id="vDist">0.00<small>km</small></div></div>
@@ -162,7 +168,6 @@ dialog p{color:var(--muted);font-size:13px;line-height:1.4}
   <section class="stage">
     <canvas id="scene"></canvas>
     <div class="overlay">
-      <span class="tag" id="tHr">Puls –</span>
       <span class="tag" id="tAvg">Ø 0 W</span>
       <span class="tag" id="tKcal">0 kcal</span>
       <span class="tag" id="tFtp">FTP 200 W</span>
@@ -279,7 +284,7 @@ function renderHud(){
   $('vSpeed').innerHTML=(S.speed*3.6).toFixed(1)+'<small>km/h</small>';
   $('vDist').innerHTML=(S.dist/1000).toFixed(2)+'<small>km</small>';
   $('vTime').textContent=fmtT(S.time);
-  $('tHr').textContent='Puls '+(S.hr?Math.round(S.hr):'–');
+  $('vHr').textContent=S.hr?Math.round(S.hr):'–';$('mHr').classList.toggle('beat',!!S.hr);
   $('tAvg').textContent='Ø '+(S.nP?Math.round(S.sumP/S.nP):0)+' W';
   $('tKcal').textContent=Math.round(S.kcal)+' kcal';
   $('tFtp').textContent='FTP '+S.ftp+' W';
