@@ -90,6 +90,13 @@ button:disabled{opacity:.45;cursor:default}
 .wobar .pbar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:6px}
 .wobar .pbar i{display:block;height:100%;background:var(--accent2)}
 .wobar button{margin-top:8px;padding:5px 10px;font-size:13px;align-self:flex-start}
+.rideitem{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center}
+.rideitem .t{font-weight:600}
+.rideitem .s{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.rideitem canvas{grid-column:1/-1;width:100%;height:40px;display:block}
+.rideitem .acts{display:flex;gap:6px;grid-row:1/3;grid-column:2}
+.rideitem .acts button{padding:7px 10px;font-size:14px}
+#dlgRides{width:min(560px,calc(100vw - 24px));max-height:calc(100vh - 40px)}
 .sum{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .sum div{background:var(--panel2);border-radius:8px;padding:6px 10px}
 .sum b{display:block;font-family:var(--display);font-size:24px;font-variant-numeric:tabular-nums}
@@ -129,6 +136,9 @@ dialog p{color:var(--muted);font-size:13px;line-height:1.4}
 @media (max-width:720px){
   .hud{grid-template-columns:repeat(4,minmax(0,1fr))}
   .m.power,.m.hr{grid-column:span 2}
+  header{gap:6px}
+  header button{padding:7px 10px;font-size:14px}
+  .brand{font-size:20px}
   .m{padding:5px 7px}
   .m .k{font-size:9.5px;letter-spacing:.04em}
   .m .v{font-size:21px}
@@ -148,6 +158,7 @@ dialog p{color:var(--muted);font-size:13px;line-height:1.4}
     <span class="status" id="status"><span class="dot"></span><span id="statusText">Nicht verbunden</span></span>
     <div class="spacer"></div>
     <button id="btnWorkouts">Trainings</button>
+    <button id="btnRides">Meine Fahrten</button>
     <button id="btnHr" class="ghost">Puls verbinden</button>
     <button id="btnConnect" class="primary">Rolle verbinden</button>
     <button id="btnSettings" class="ghost" aria-label="Einstellungen">Einstellungen</button>
@@ -204,7 +215,7 @@ dialog p{color:var(--muted);font-size:13px;line-height:1.4}
       <div class="presets" id="presets"></div>
       <div class="row2">
         <button id="btnStart" class="primary">Start</button>
-        <button id="btnReset">Zurücksetzen</button>
+        <button id="btnEnd">Fahrt beenden</button>
       </div>
     </div>
   </section>
@@ -218,6 +229,13 @@ dialog p{color:var(--muted);font-size:13px;line-height:1.4}
   <div id="ftpHistBox"></div>
   <div class="row2" style="margin-bottom:8px"><button id="btnRampSet">FTP-Rampentest starten</button></div>
   <div class="row2"><button id="dlgClose" class="primary">Fertig</button></div>
+</dialog>
+
+<dialog id="dlgRides">
+  <h2>Meine Fahrten</h2>
+  <p style="color:var(--muted);font-size:13px;margin:0 0 10px">Deine Fahrten werden auf diesem Gerät gespeichert. Mit „Datei“ lädst du eine Fahrt herunter, z.B. zum Hochladen bei Strava.</p>
+  <div class="wolist" id="rideList"></div>
+  <div class="wrap"><button class="primary" id="ridesClose">Schließen</button></div>
 </dialog>
 
 <dialog id="dlgWo">
@@ -390,12 +408,11 @@ async function toggleRun(){
   S.running=!S.running;
   $('btnStart').textContent=S.running?'Pause':'Weiter';
   $('btnStart').className=S.running?'':'primary';
-  if(S.running){try{wake=await navigator.wakeLock?.request('screen')}catch(e){}}
+  if(S.running){if(!S.startedAt)S.startedAt=new Date().toISOString();try{wake=await navigator.wakeLock?.request('screen')}catch(e){}}
   else{try{wake&&wake.release();wake=null}catch(e){}}
 }
 $('btnStart').onclick=()=>{if(S.mode==='none'){connect();return}toggleRun()};
-function resetRide(){Object.assign(S,{dist:0,time:0,kcal:0,sumP:0,nP:0,sumHr:0,nHr:0,hist:[]});renderHud()}
-$('btnReset').onclick=resetRide;
+function resetRide(){Object.assign(S,{dist:0,time:0,kcal:0,sumP:0,nP:0,sumHr:0,nHr:0,hist:[],track:[],startedAt:null,rideName:''});if(!S.running){$('btnStart').textContent='Start';$('btnStart').className='primary'}renderHud()}
 $('btnConnect').onclick=connect;$('btnConnect2').onclick=connect;$('btnDemo').onclick=startDemo;
 const dlg=$('dlg');
 $('btnSettings').onclick=()=>{$('inFtp').value=S.ftp;$('inKg').value=S.kg;renderFtpHist();dlg.showModal()};
@@ -655,7 +672,7 @@ function beep(f=880,len=0.15){try{actx=actx||new (window.AudioContext||window.we
 
 function startWorkout(wo){
   dlgWo.close();resetRide();
-  S.wo={plan:JSON.parse(JSON.stringify(wo)),t:0,idx:-1,hist:[]};
+  S.wo={plan:JSON.parse(JSON.stringify(wo)),t:0,idx:-1,hist:[]};S.rideName=wo.name;
   $('woName').textContent=wo.name;$('woBar').hidden=false;
   $('woStop').textContent=wo.ramp?'Ich kann nicht mehr':'Training beenden';$('woStop').className=wo.ramp?'primary':'ghost';
   setTarget(wo.steps[0].w);
@@ -691,10 +708,75 @@ function finishWorkout(){
   setTarget(Math.round(S.ftp*0.45/5)*5);
   const n=$('notice');n.hidden=false;
   n.innerHTML='<h2>Training geschafft!</h2><p></p><div class="sum"><div><span>Zeit</span><b>'+fmtT(S.time)+'</b></div><div><span>Ø Leistung</span><b>'+(S.nP?Math.round(S.sumP/S.nP):0)+' W</b></div><div><span>Strecke</span><b>'+(S.dist/1000).toFixed(1)+' km</b></div><div><span>Ø Puls</span><b>'+(S.nHr?Math.round(S.sumHr/S.nHr):'–')+'</b></div><div><span>Energie</span><b>'+Math.round(S.kcal)+' kcal</b></div></div><div class="btns"><button class="primary" id="nClose">Schließen</button></div>';
-  n.querySelector('p').textContent=name+' ist vorbei. Die Rolle steht jetzt auf lockeren '+S.target+' W zum Ausrollen.';
+  n.querySelector('p').textContent=name+' ist vorbei. Die Rolle steht jetzt auf lockeren '+S.target+' W zum Ausrollen. Wenn du fertig bist, tippe auf „Fahrt beenden“, dann wird die Fahrt gespeichert.';
   $('nClose').onclick=hideNotice;
 }
 $('woStop').onclick=()=>{S.wo&&S.wo.plan.ramp?finishRamp():endWorkoutUi()};
+
+/* ---------- Saving rides ---------- */
+const loadRides=()=>store.get('rides',[]);
+function saveRide(){
+  const tr=S.track||[],ds=[];
+  for(let i=0;i<tr.length;i+=5){const c=tr.slice(i,i+5),a=k=>Math.round(c.reduce((x,r)=>x+r[k],0)/c.length);ds.push([a(0),a(1),a(2),a(3),c[c.length-1][4]])}
+  const ride={id:Date.now(),date:S.startedAt||new Date().toISOString(),name:S.rideName||'Freie Fahrt',time:Math.round(S.time),dist:Math.round(S.dist),
+    avgP:S.nP?Math.round(S.sumP/S.nP):0,maxP:tr.reduce((m,r)=>Math.max(m,r[0]),0),avgHr:S.nHr?Math.round(S.sumHr/S.nHr):0,maxHr:tr.reduce((m,r)=>Math.max(m,r[1]),0),kcal:Math.round(S.kcal),ftp:S.ftp,track:ds};
+  let rides=loadRides();rides.unshift(ride);
+  for(let n=rides.length;n>0;n--){try{localStorage.setItem('wr_rides',JSON.stringify(rides));return ride}catch(e){rides=rides.slice(0,n-1)}}
+  return ride;
+}
+function rideTcx(r){
+  const t0=new Date(r.date).getTime(),iso=ms=>new Date(ms).toISOString().replace(/\.\d+Z$/,'Z');
+  const pts=r.track.map((p,i)=>'<Trackpoint><Time>'+iso(t0+i*5000)+'</Time><DistanceMeters>'+p[4]+'</DistanceMeters>'+(p[1]>0?'<HeartRateBpm><Value>'+p[1]+'</Value></HeartRateBpm>':'')+'<Cadence>'+Math.min(254,p[2])+'</Cadence><Extensions><ns3:TPX><ns3:Speed>'+(p[3]/100).toFixed(2)+'</ns3:Speed><ns3:Watts>'+p[0]+'</ns3:Watts></ns3:TPX></Extensions></Trackpoint>').join('');
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2" xmlns:ns3="http://www.garmin.com/xmlschemas/ActivityExtension/v2"><Activities><Activity Sport="Biking"><Id>'+iso(t0)+'</Id><Lap StartTime="'+iso(t0)+'"><TotalTimeSeconds>'+r.time+'</TotalTimeSeconds><DistanceMeters>'+r.dist+'</DistanceMeters><Calories>'+r.kcal+'</Calories><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod><Track>'+pts+'</Track></Lap><Notes>WattRide: '+r.name.replace(/[<&>]/g,'')+'</Notes></Activity></Activities></TrainingCenterDatabase>';
+}
+function downloadRide(r){
+  const blob=new Blob([rideTcx(r)],{type:'application/vnd.garmin.tcx+xml'}),a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download='WattRide_'+r.date.slice(0,16).replace(/[:T]/g,'-')+'.tcx';
+  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);
+}
+const fmtDate=d=>{const x=new Date(d);return x.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})+', '+x.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})};
+function rideStats(r){return fmtT(r.time)+' · Ø '+r.avgP+' W'+(r.avgHr?' · Ø Puls '+r.avgHr:'')+' · '+(r.dist/1000).toFixed(1)+' km · '+r.kcal+' kcal'}
+function drawRideChart(cv2,r){
+  const rc=cv2.getBoundingClientRect();cv2.width=rc.width*dpr;cv2.height=rc.height*dpr;const c=cv2.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);
+  const w=rc.width,h=rc.height,n=r.track.length;if(!n)return;const max=Math.max(r.maxP,r.ftp*1.3),bw=w/n;
+  r.track.forEach((p,i)=>{const bh=p[0]/max*(h-2);c.fillStyle=zoneOf(p[0])[2];c.fillRect(i*bw,h-bh,Math.max(1,bw-0.3),bh)});
+  if(r.avgHr){c.strokeStyle='#ff4d4f';c.lineWidth=1.5;c.beginPath();const hm=Math.max(r.maxHr,1)*1.1;r.track.forEach((p,i)=>{const y=h-(p[1]/hm)*(h-2);i?c.lineTo(i*bw,y):c.moveTo(i*bw,y)});c.stroke()}
+}
+const dlgRides=$('dlgRides');
+function renderRides(){
+  const box=$('rideList'),rides=loadRides();box.innerHTML='';
+  if(!rides.length){box.innerHTML='<p style="color:var(--muted)">Noch keine Fahrten gespeichert. Tippe nach dem Training auf „Fahrt beenden“.</p>';return}
+  rides.forEach((r,i)=>{
+    const el=document.createElement('div');el.className='rideitem';
+    el.innerHTML='<div class="t"></div><div class="acts"><button data-a="dl">Datei</button><button class="ghost" data-a="del" aria-label="Löschen">✕</button></div><div class="s"></div><canvas></canvas>';
+    el.querySelector('.t').textContent=fmtDate(r.date)+' · '+r.name;el.querySelector('.s').textContent=rideStats(r);
+    el.querySelector('[data-a=dl]').onclick=()=>downloadRide(r);
+    const del=el.querySelector('[data-a=del]');
+    del.onclick=()=>{if(del.dataset.sure){const all=loadRides();all.splice(i,1);store.set('rides',all);renderRides()}else{del.dataset.sure=1;del.textContent='Wirklich löschen?'}};
+    box.appendChild(el);requestAnimationFrame(()=>drawRideChart(el.querySelector('canvas'),r));
+  });
+}
+$('btnRides').onclick=()=>{dlgRides.showModal();renderRides()};
+$('ridesClose').onclick=()=>dlgRides.close();
+
+function endRide(){
+  if(S.running)toggleRun();
+  const n=$('notice');n.hidden=false;
+  if(S.time<60){
+    n.innerHTML='<h2>Fahrt zurücksetzen?</h2><p>Die Fahrt ist kürzer als eine Minute und wird deshalb nicht gespeichert.</p><div class="btns"><button class="primary" id="nReset">Zurücksetzen</button><button class="ghost" id="nBack">Weiterfahren</button></div>';
+    $('nReset').onclick=()=>{endWorkoutUi();resetRide();hideNotice()};$('nBack').onclick=()=>{hideNotice();toggleRun()};return;
+  }
+  n.innerHTML='<h2>Fahrt beenden?</h2><p>'+fmtT(S.time)+' gefahren. Beim Beenden wird die Fahrt unter „Meine Fahrten“ gespeichert.</p><div class="btns"><button class="primary" id="nSave">Beenden und speichern</button><button class="ghost" id="nBack">Weiterfahren</button><button class="ghost" id="nDrop">Ohne Speichern verwerfen</button></div>';
+  $('nBack').onclick=()=>{hideNotice();toggleRun()};
+  $('nDrop').onclick=()=>{endWorkoutUi();resetRide();hideNotice()};
+  $('nSave').onclick=()=>{
+    endWorkoutUi();const r=saveRide();resetRide();
+    n.innerHTML='<h2>Fahrt gespeichert</h2><p></p><div class="sum"><div><span>Zeit</span><b>'+fmtT(r.time)+'</b></div><div><span>Ø Leistung</span><b>'+r.avgP+' W</b></div><div><span>Strecke</span><b>'+(r.dist/1000).toFixed(1)+' km</b></div><div><span>Ø Puls</span><b>'+(r.avgHr||'–')+'</b></div><div><span>Max. Leistung</span><b>'+r.maxP+' W</b></div><div><span>Energie</span><b>'+r.kcal+' kcal</b></div></div><div class="btns"><button class="primary" id="nClose">Schließen</button><button id="nDl">Als Datei herunterladen</button><button class="ghost" id="nList">Meine Fahrten</button></div>';
+    n.querySelector('p').textContent=r.name+' · '+fmtDate(r.date);
+    $('nClose').onclick=hideNotice;$('nDl').onclick=()=>downloadRide(r);$('nList').onclick=()=>{hideNotice();dlgRides.showModal();renderRides()};
+  };
+}
+$('btnEnd').onclick=endRide;
 
 /* ---------- FTP ramp test ---------- */
 const WARM=300;
@@ -747,7 +829,7 @@ function frame(t){
   S.speed+=(vT-S.speed)*Math.min(1,dt*0.8);
   if(S.running){
     S.dist+=S.speed*dt;S.time+=dt;S.kcal+=S.pSmooth*dt/1000; // kJ Arbeit ≈ kcal verbrannt
-    acc+=dt;if(acc>=1){acc-=1;S.sumP+=S.power;S.nP++;if(S.hr>0){S.sumHr+=S.hr;S.nHr++}if(S.wo)S.wo.hist.push(Math.max(0,S.power))}
+    acc+=dt;if(acc>=1){acc-=1;S.sumP+=S.power;S.nP++;if(S.hr>0){S.sumHr+=S.hr;S.nHr++}if(S.wo)S.wo.hist.push(Math.max(0,S.power));(S.track=S.track||[]).push([Math.max(0,Math.round(S.power)),Math.round(S.hr||0),Math.round(S.cad||0),Math.round(S.speed*100),Math.round(S.dist)])}
     histAcc+=dt;if(histAcc>=1){histAcc-=1;S.hist.push(Math.max(0,S.power));if(S.hist.length>3600)S.hist.shift()}
   }
   if(S.wo&&S.running&&S.mode!=='none')tickWorkout(dt);
